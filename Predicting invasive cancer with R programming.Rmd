@@ -1,0 +1,1889 @@
+---
+title: 'MA321-7: Applied Statistics'
+author: "Group Project"
+Registration number: ""
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loading packages
+```{r, warning=F, message=F}
+library(dplyr) # wrangling data
+library(VIM) # For imputing the data
+library(purrr) # for looking through a function
+library(ggplot2) # Visualizations
+library(ggcorrplot)   # to create a correlation visualization
+library(caret)    #for Machine learning procedures
+library("DMwR") # calling library DMwR for knnimputation function
+library("caTools") 
+library(class) # package for kNN
+library(xgboost) # package for xgboost
+library(mboost) # package for GLM Boost
+library(e1071) # package for SVM 
+library(randomForest) # package for random forest
+
+```
+
+
+```{r}
+# load the data from csv file
+
+raw_data <- read.csv("gene-expression-invasive-vs-noninvasive-cancer.csv")
+
+```
+
+
+# Data Preprocessing
+```{r}
+# Set the seed with the highest ID number of the team
+
+set.seed(2315880)
+
+# Make subset from the data
+subset_index <- rank(runif(1:4948))[1:2000]
+team_subset <- raw_data[subset_index]
+
+# add the variable Class
+team_subset$Class <-  raw_data$Class
+
+```
+
+
+## Dealing with Missing Values
+```{r}
+
+# get the name of the variables where there is at least 1 Missing value
+var_with_NAs <- names(which(colSums(is.na(team_subset)) > 0))
+
+# get the index of the rows where there is at least 1 Missing value
+index_with_NAs <- which(rowSums(is.na(team_subset)) > 0)
+
+```
+
+
+```{r}
+
+# count total missing values
+total_missing <- sum(is.na(team_subset))
+print(paste("Total missing values: ", total_missing))
+print(paste(sep = '',"Percentage of the total: ", round(100 * total_missing/ (dim(team_subset)[1]*dim(team_subset)[2]),3), ' %'))
+print(paste(sep = '',"percentage of imcomplete columns: ",round(100 * length(var_with_NAs) / dim(team_subset)[2],3), ' %'  ))
+print(paste(sep = '', "percentage of imcomplete rows: ", round(100 * length(index_with_NAs)/ dim(team_subset)[1],3), ' %'))
+```
+
+
+```{r}
+
+# count how many missing values there are in the columns with missing values
+rowSums(is.na(team_subset[index_with_NAs,]))
+
+```
+The column 54 has 73 out of 74 missing values, we will drop that column because it is very likely there was an error in the measure of that variable.
+
+```{r}
+#dropping row 54
+
+team_subset <- team_subset[-54, ]
+dim(team_subset)
+
+```
+
+
+```{r, eval=TRUE}
+
+# Function to calculate misclassification error
+
+library(MASS) # library for creating table
+
+misclass <- function(pred, target){
+  conf <- table(list(predicted=pred, observed=target)) # create confusion matrix from observed and predicted
+  sensitivity <- conf[1] / (conf[1]  + conf[2]) # calculate sensitivity
+  specificity <- conf[4] / (conf[4] + conf[3]) # calculate specificity
+  misclassification <- (conf[3]+conf[2])/(conf[1]+conf[2]+conf[3]+conf[4]) # calculate misclassification
+  return(misclassification) # return the error
+}
+
+# Function to calculate mean from a list
+mean_list <- function(list_name){
+  sum <- 0
+  for (i in list_name){
+    if (is.na(i) == FALSE) {
+      sum <- sum + i
+      }
+  }
+  avg <- sum/length(list_name)
+  return (avg)
+}
+
+```
+
+
+
+```{r}
+
+#counting how many missing values
+sum(is.na(team_subset))
+
+# get the name of the variable where there is the last missing value
+var_with_NAs <- names(which(colSums(is.na(team_subset)) > 0))
+var_with_NAs
+
+```
+
+
+```{r}
+
+par(mfrow = c(1,2))
+
+#plotting the variable to see the distribution
+boxplot(team_subset[,'NM_004774'])
+
+#plotting the variable to see the distribution by class
+boxplot(team_subset[,'NM_004774']~ team_subset[,'Class'],)
+
+```
+    
+Since there are outliers, we will imputhe the missing value with the median instead of the mean.
+
+```{r eval=TRUE}
+
+# function for manual partitions for cross validation
+
+cv_fold <- function(data_, n_folds){
+  set.seed(2315880)
+  data_ <- data_[sample(1:nrow(data_)),]
+  if (n_folds == 3){
+    if (dim(data_)[1] == 77){
+      dat1 <- data_[1:25, ]
+      dat2 <- data_[26:50, ]
+      dat3 <- data_[51:77, ]
+      data_list <- list(dat1, dat2, dat3)
+    }
+      
+    if (dim(data_)[1] == 132){
+      dat1 <- data_[1:44, ]
+      dat2 <- data_[45:88, ]
+      dat3 <- data_[89:132, ]
+      data_list <- list(dat1, dat2, dat3)
+    }
+    
+  }
+  
+  if (n_folds == 4){
+    if (dim(data_)[1] == 77){
+      dat1 <- data_[1:19, ]
+      dat2 <- data_[20:38, ]
+      dat3 <- data_[39:57, ]
+      dat4 <- data_[58:77, ]
+      data_list <- list(dat1, dat2, dat3, dat4)
+    }
+      
+    if (dim(data_)[1] == 132){
+      dat1 <- data_[1:33, ]
+      dat2 <- data_[34:66, ]
+      dat3 <- data_[67:99, ]
+      dat4 <- data_[100:132, ]
+      data_list <- list(dat1, dat2, dat3, dat4)
+    }
+    
+  }
+  
+  if (n_folds == 5){
+    if (dim(data_)[1] == 77){
+      dat1 <- data_[1:15, ]
+      dat2 <- data_[16:30, ]
+      dat3 <- data_[31:45, ]
+      dat4 <- data_[46:60, ]
+      dat5 <- data_[61:77, ]
+      data_list <- list(dat1, dat2, dat3, dat4, dat5)
+    }
+      
+    if (dim(data_)[1] == 132){
+      dat1 <- data_[1:26, ]
+      dat2 <- data_[27:52, ]
+      dat3 <- data_[53:78, ]
+      dat4 <- data_[79:104, ]
+      dat5 <- data_[105:132, ]
+      data_list <- list(dat1, dat2, dat3, dat4, dat5)
+    }
+    
+  }
+  
+  if (n_folds == 6){
+    if (dim(data_)[1] == 77){
+      dat1 <- data_[1:13, ]
+      dat2 <- data_[14:26, ]
+      dat3 <- data_[27:39, ]
+      dat4 <- data_[40:52, ]
+      dat5 <- data_[53:65, ]
+      dat6 <- data_[66:77, ]
+      data_list <- list(dat1, dat2, dat3, dat4, dat5, dat6)
+    }
+      
+    if (dim(data_)[1] == 132){
+      dat1 <- data_[1:22, ]
+      dat2 <- data_[23:44, ]
+      dat3 <- data_[45:66, ]
+      dat4 <- data_[67:88, ]
+      dat5 <- data_[89:110, ]
+      dat6 <- data_[111:132, ]
+      data_list <- list(dat1, dat2, dat3, dat4, dat5, dat6)
+    }
+    
+  }
+  
+  if (n_folds == 7){
+    if (dim(data_)[1] == 77){
+      dat1 <- data_[1:11, ]
+      dat2 <- data_[12:22, ]
+      dat3 <- data_[23:33, ]
+      dat4 <- data_[34:44, ]
+      dat5 <- data_[45:55, ]
+      dat6 <- data_[56:66, ]
+      dat7 <- data_[67:77, ]
+      data_list <- list(dat1, dat2, dat3, dat4, dat5, dat6, dat7)
+    }
+      
+    if (dim(data_)[1] == 132){
+      dat1 <- data_[1:19, ]
+      dat2 <- data_[20:38, ]
+      dat3 <- data_[39:57, ]
+      dat4 <- data_[58:76, ]
+      dat5 <- data_[77:95, ]
+      dat6 <- data_[96:114, ]
+      dat7 <- data_[115:132, ]
+      data_list <- list(dat1, dat2, dat3, dat4, dat5, dat6, dat7)
+    }
+    
+  }
+  
+  if (n_folds == 8){
+    if (dim(data_)[1] == 77){
+      dat1 <- data_[1:9, ]
+      dat2 <- data_[10:19, ]
+      dat3 <- data_[20:28, ]
+      dat4 <- data_[29:38, ]
+      dat5 <- data_[39:47, ]
+      dat6 <- data_[48:57, ]
+      dat7 <- data_[58:67, ]
+      dat8 <- data_[68:77, ]
+      data_list <- list(dat1, dat2, dat3, dat4, dat5, dat6, dat7, dat8)
+    }
+      
+    if (dim(data_)[1] == 132){
+      dat1 <- data_[1:16, ]
+      dat2 <- data_[17:32, ]
+      dat3 <- data_[33:48, ]
+      dat4 <- data_[48:64, ]
+      dat5 <- data_[65:81, ]
+      dat6 <- data_[82:98, ]
+      dat7 <- data_[99:115, ]
+      dat8 <- data_[116:132, ]
+      data_list <- list(dat1, dat2, dat3, dat4, dat5, dat6, dat7, dat8)
+    }
+    
+  }
+  
+  if (n_folds == 9){
+    if (dim(data_)[1] == 77){
+      dat1 <- data_[1:8, ]
+      dat2 <- data_[9:17, ]
+      dat3 <- data_[18:25, ]
+      dat4 <- data_[26:34, ]
+      dat5 <- data_[35:42, ]
+      dat6 <- data_[43:51, ]
+      dat7 <- data_[52:59, ]
+      dat8 <- data_[60:68, ]
+      dat9 <- data_[69:77, ]
+      data_list <- list(dat1, dat2, dat3, dat4, dat5, dat6, dat7, dat8, dat9)
+    }
+      
+    if (dim(data_)[1] == 132){
+      dat1 <- data_[1:14, ]
+      dat2 <- data_[15:29, ]
+      dat3 <- data_[30:43, ]
+      dat4 <- data_[44:58, ]
+      dat5 <- data_[59:72, ]
+      dat6 <- data_[73:87, ]
+      dat7 <- data_[88:101, ]
+      dat8 <- data_[102:117, ]
+      dat9 <- data_[118:132, ]
+      data_list <- list(dat1, dat2, dat3, dat4, dat5, dat6, dat7, dat8, dat9)
+    }
+    
+  }
+  
+  if (n_folds == 10){
+    if (dim(data_)[1] == 77){
+      dat1 <- data_[1:7, ]
+      dat2 <- data_[8:14, ]
+      dat3 <- data_[15:22, ]
+      dat4 <- data_[23:30, ]
+      dat5 <- data_[31:38, ]
+      dat6 <- data_[39:46, ]
+      dat7 <- data_[47:54, ]
+      dat8 <- data_[55:68, ]
+      dat9 <- data_[69:70, ]
+      dat10 <- data_[71:78, ]
+      data_list <- list(dat1, dat2, dat3, dat4, dat5, dat6, dat7, dat8, dat9, dat10)
+    }
+      
+    if (dim(data_)[1] == 132){
+      dat1 <- data_[1:13, ]
+      dat2 <- data_[14:26, ]
+      dat3 <- data_[27:39, ]
+      dat4 <- data_[40:52, ]
+      dat5 <- data_[53:65, ]
+      dat6 <- data_[66:78, ]
+      dat7 <- data_[79:91, ]
+      dat8 <- data_[92:105, ]
+      dat9 <- data_[106:119, ]
+      dat10 <- data_[120:132, ]
+      data_list <- list(dat1, dat2, dat3, dat4, dat5, dat6, dat7, dat8, dat9, dat10)
+    }
+    
+  }
+  
+  return(data_list)
+  
+}
+
+```
+
+
+## Try median with cross validation
+```{r eval=TRUE}
+
+experiment_data <- team_subset # making a temporary dataset to run the experiment
+
+# replace missing value using median
+value_to_impute <- median(experiment_data[,'NM_004774'], na.rm = T)
+experiment_data <- experiment_data %>%
+        replace(is.na(.), value_to_impute)
+
+# change class labels 1 and 2 to 0 and 1
+experiment_data$Class <- case_when(
+  experiment_data$Class == 1~0,
+  experiment_data$Class == 2~1)
+
+data_list <- cv_fold(experiment_data, 5)
+
+# run logistic regression model for all 5 folds and an average error
+avg_error <- list()
+for (i in data_list){
+
+  cv_test <- as.data.frame(i)
+  cv_train <- setdiff(experiment_data, cv_test)
+
+  LR <- glm(Class ~., data = cv_train, family = binomial)
+
+  LR_prediction <- predict(LR, newdata = cv_test, type = 'response')
+  
+  LR_prediction <- case_when(
+    LR_prediction < 0.5 ~ 0,
+    TRUE ~ 1
+    )
+
+  error <- misclass(LR_prediction, cv_test$Class)
+  avg_error <- append(avg_error, error)
+}
+
+mean_list(avg_error) # get mean error from all 6 folds
+
+```
+
+
+## Try KNN impute method
+```{r, eval=TRUE}
+
+# run an experiment of knn imputation for all k between 1 and 10, and check which k gives least error
+kn <- seq(1,10, by = 1)
+
+error_list <- list()
+impute_number <- list()
+
+experiment_data <- team_subset
+
+for (impute in kn){
+  
+  # impute missing value using kNNimpute
+  experiment_data <- knnImputation(data = experiment_data, k = impute, scale = TRUE, distData = NULL)
+
+  # Logistic Regression
+  data_list <- cv_fold(experiment_data, 5)
+  avg_error <- list()
+  for (i in data_list){
+    
+    cv_test <- as.data.frame(i)
+    cv_train <- setdiff(experiment_data, cv_test)
+
+    LDA <- lda(Class ~.  , data=cv_train) # perform LDA on subset
+    lda_prediction <- predict(LDA, newdata = cv_test) 
+
+    error <- misclass(lda_prediction$class, cv_test$Class)
+    avg_error <- append(avg_error, error)
+    }
+
+  err <- mean_list(avg_error)
+  impute_number <- append(impute_number, impute)
+  error_list <- append(error_list, err)
+
+}
+
+print(min(unlist(error_list)))
+
+impute_df = data.frame(unlist(impute_number),unlist(error_list))
+names(impute_df) = c("k_value","Error")
+
+
+ggplot(impute_df, aes(x=k_value, y=Error)) +
+  geom_line( color="#69b3a2", linewidth=1, alpha=0.9, linetype=1) +
+  scale_x_continuous(breaks= kn) +
+  ggtitle("Effect of no. of neighbours on error")
+
+```
+All the values for k gives same error, which is less than the error by using median for imputation.
+
+
+```{r, eval=TRUE}
+indi <- which(is.na(team_subset[,'NM_004774'])) 
+
+team_subset[,'NM_004774'][indi]
+
+```
+
+
+```{r, eval=TRUE}
+
+# Experiment to check imputed values for different k in kNN impute
+
+kn <- seq(1,10, by = 1)
+
+imputed <- list()
+
+experiment_data <- team_subset
+
+indi <- which(is.na(experiment_data[,'NM_004774'])) 
+
+
+for (impute in kn){
+  
+  # impute missing value using kNNimpute
+  experiment_data <- knnImputation(data = experiment_data, k = impute, scale = TRUE, distData = NULL)
+  
+  imputed <- append(imputed, experiment_data[,'NM_004774'][indi])
+  
+}
+
+print(imputed)
+
+```
+
+## Check class imbalance
+```{r, eval=TRUE}
+team_subset[,'NM_004774']
+# Impute missing values using kNN
+new_df <- knnImputation(data = team_subset, k = 2, scale = TRUE, distData = NULL)
+
+# Change classes from 1 and 2 to 0 and 1 for using in logistic regression
+new_df$Class <- case_when(
+  new_df$Class == 1~0,
+  new_df$Class == 2~1)
+
+# plot bar plot to check class imbalance
+library("ggplot2")
+ggplot(data = new_df, aes(x=Class))+ geom_bar()
+
+```
+
+## Smote
+```{r, eval=TRUE}
+
+# Use SMOTE to generate synthetic raws to balance classes
+# new_df$Class = as.factor(new_df$Class)
+# 
+# new_df <- SMOTE(Class ~ ., new_df, perc.over = 100, perc.under=200)
+# row.names(new_df) <- NULL
+# 
+# ggplot(data = new_df, aes(x=Class))+ geom_bar()
+
+```
+
+
+```{r, eval=TRUE}
+
+# Check dimensions of the dataset
+
+dim(new_df)
+
+```
+
+## T-test
+```{r, eval=TRUE}
+
+# Function for Two sample t-test
+gene_func <- function(gene) {
+  results <- t.test(new_df[[gene]] ~ new_df$Class)
+  return(results$p.value)
+}
+
+# Applying t-test function
+p_values <- sapply(names(new_df)[-ncol(new_df)], gene_func)
+
+# Variable to store genes names
+col_names = names(p_values)
+
+# Storing t-test results in a data frame
+t_test_results_df <- data.frame(Genes = col_names, P_Value = p_values)
+
+# Filtering genes
+filtered_genes <- t_test_results_df[t_test_results_df$P_Value < 0.05, ]
+
+# Transposing
+transp_filtered_genes <- t(filtered_genes)
+
+# Filtered column names
+filtered_col_names <- colnames(transp_filtered_genes)
+
+# Final subset after performing dimensionality reduction using two sample t-test
+filtered_df <- new_df[filtered_col_names]
+filtered_df$Class <- new_df$Class
+
+dim(filtered_df)
+
+```
+
+
+```{r, eval=TRUE}
+
+# Using variance to perform dimensionality reduction
+
+ # gene_variance <- apply(new_df, 2, var)
+ # filtered_cols <- names(gene_variance[gene_variance > 0.252]) 
+ # #choosing first 50 samples with highest variance
+ # 
+ # filtered_var_df <- new_df[, filtered_cols]
+ # dim(filtered_var_df)
+
+```
+
+
+
+```{r, eval=TRUE}
+
+# Perform PCA
+
+# len <- length(filtered_var_df)
+# pca_ <- princomp(filtered_var_df[,1:len-1], cor = TRUE) # create principal components
+# 
+# summary(pca_, loadings = FALSE, cutoff=.1) # summarize created principal components
+# plot(pca_) # plot principal components
+
+```
+
+
+
+```{r eval=TRUE}
+
+# Make dataset from top 25 PCA components
+
+# pc <- pca_$score[,1:25]
+# filtered_var_df <- as.data.frame(pc)
+# dim(filtered_var_df)
+
+```
+
+
+## LASSO Logistic regression regularisation 
+```{r}
+
+# change the name of the Class for avoiding confusion when performing the logistic regression
+
+filtered_ <- filtered_df
+filtered_$Class <- ifelse(filtered_$Class == 1 , 'non-inv' , 'inv')
+
+# Separating the data into training and testing
+
+set.seed(2315880)
+index_train <- filtered_$Class %>%
+        createDataPartition(p = 0.8, list = F)
+
+# Creating the training and testing datasets
+
+train.data <- filtered_[index_train,]
+test.data <- filtered_[-index_train,]
+
+```
+
+
+```{r}
+
+# Logistic regression with all 347 variables
+GLM_model <- glm(as.factor(Class)~. ,data = train.data, family = binomial)
+
+```
+
+
+```{r}
+
+# predicting with the model we just fit
+class_num = which(names(test.data)== 'Class')
+glm_prob <- predict.glm(GLM_model, test.data[,-class_num], type= 'response')
+contrasts(as.factor(train.data$Class))
+
+```
+
+```{r}
+
+glm_predict <- rep('inv',nrow(test.data))
+glm_predict[glm_prob>.5] <- 'non-inv'
+
+#confusion matrix
+table(pred= glm_predict, true=test.data$Class)
+
+#accuracy
+mean(glm_predict==test.data$Class)
+
+```
+
+```{r}
+
+library(glmnet) # For LASSO logistic regression
+
+# Creating a matrix
+x <- model.matrix(Class~. , train.data)
+
+# Preparing the dependent variable for th emodel
+y <- ifelse(train.data$Class=='inv', 1, 0)
+
+set.seed(2315880)
+
+# Fitting the model
+cv.lasso <- cv.glmnet(x, y, alpha = 1, family = "binomial") #alpha =1 for LASSO
+plot(cv.lasso)
+```
+
+```{r}
+
+# min value of lambda
+lambda_min <- cv.lasso$lambda.min
+
+# best value of lambda (minimun number of variables)
+lambda_1se <- cv.lasso$lambda.1se
+```
+
+
+```{r}
+
+# prepare the data into a matrix format
+test.data_matrix <- model.matrix(Class~.,test.data)
+
+#predict class with the s value equal to lambda_min
+lasso_prob <- predict(cv.lasso, newx = test.data_matrix, s = lambda_min, type= 'response')
+
+#translate probabilities to predictions
+lasso_predict <- rep('non-inv',nrow(test.data))
+lasso_predict[lasso_prob>.5] <- 'inv'
+
+#confusion matrix
+table(pred=lasso_predict,true=test.data$Class)
+
+#accuracy
+mean(lasso_predict==test.data$Class)
+```
+  
+The accuracy of the logistic regression went up from 0.6428571 to 0.8571429, from using 347 variables to a total of 29 variables after the LASSO penalisation.
+
+
+```{r}
+
+#regression coefficients
+coefficients <- as.matrix(coef(cv.lasso, s = lambda_min))
+variables_names <- names(coefficients[coefficients!=0,])
+variables_names <-variables_names[-(variables_names == "(Intercept)") ]
+variables_names
+
+```
+
+```{r}
+
+data_reduced <- new_df[,variables_names]
+data_reduced_with_class <- data_reduced %>% mutate(Class = new_df$Class)
+
+```
+
+
+
+#Correlation
+```{r}
+
+library(correlation)
+# Create the correlation matrix sorted for easier visualization.
+corr_matrix <- cor_sort(cor(data_reduced),distance = "correlation")
+```
+
+
+```{r}
+
+#plot the correlation matrix
+ggcorrplot(corr_matrix,
+           type = "upper",
+           outline.color = "black",
+           ggtheme = ggplot2::theme_void(),
+           colors = c("#6D9EC1", "white", "#E46726"),
+           lab = TRUE,
+           lab_size = 2,
+           lab_col = "grey40",
+           title = 'Correlation Matrix\n' ,
+           legend.title = "",
+           tl.cex = 8,
+           tl.col = 45,
+           tl.srt = 90)+
+        scale_x_discrete(position='top')
+```
+
+
+#PCA (features)
+```{r}
+
+#fitting the data into a PCA
+pca.fit <- princomp(data_reduced, cor = TRUE)
+summary(pca.fit) 
+```
+
+
+```{r}
+
+plot(pca.fit)
+```
+
+
+
+```{r}
+
+data_pca <- pca.fit$scores[,1:10]
+
+#names(data) <- c('PC 1', 'PC 2')
+data_pca <- as.data.frame(data_pca)
+data_pca$class <- new_df$Class
+
+ggplot( data_pca, aes(x = Comp.1, y = Comp.2, colour = as.factor(class)))+
+  geom_point()
+```
+
+
+# PCA (observations)
+```{r}
+team_subset.t <- t(new_df[,-1])
+
+#fitting the data into a PCA
+pca.t.fit <- princomp(team_subset.t, cor = TRUE)
+
+summary(pca.t.fit) 
+plot(pca.t.fit)
+
+```
+
+# Herarchical Clust (genes)
+```{r}
+library(dendextend)
+# distance matrix
+distance_matrix <- dist(t(data_reduced),method = 'euclidean')
+
+# "euclidean", "maximum", "manhattan", "canberra", "binary" or "minkowski".
+
+h_cluster_average <- hclust(distance_matrix, method = 'average')
+h_cluster_average_d <- as.dendrogram(h_cluster_average)
+h_cluster_average_colour <- color_branches(h_cluster_average_d, k=3)
+
+h_cluster_complete <- hclust(distance_matrix, method = 'complete')
+h_cluster_complete_d <- as.dendrogram(h_cluster_complete)
+h_cluster_complete_colour <- color_branches(h_cluster_complete_d, k=3)
+
+h_cluster_single <- hclust(distance_matrix, method = 'single')
+h_cluster_single_d <- as.dendrogram(h_cluster_single)
+h_cluster_single_colour <- color_branches(h_cluster_single_d, k=3)
+
+h_cluster_centroid <- hclust(distance_matrix, method = 'mcquitty')
+h_cluster_centroid_d <- as.dendrogram(h_cluster_centroid)
+h_cluster_centroid_colour <- color_branches(h_cluster_centroid_d, k=3)
+```
+
+
+```{r}
+par(mfrow = c(2,2),mar = c(2, 2, 2, 2))
+plot(h_cluster_average_colour, main="Linkage criteria: Average", cex = 0.6)
+plot(h_cluster_complete_colour, main="Linkage criteria: Complete", cex = 0.6)
+plot(h_cluster_single_colour, main="Linkage criteria: Single", cex = 0.6)
+plot(h_cluster_centroid_colour, main = "Linkage criteria: Mcquitty", cex = 0.6)
+```
+
+# Herarchical cluster (Observations)
+```{r}
+library(dendextend)
+# distance matrix
+distance_matrix <- dist(data_reduced, method = "canberra" )
+# "euclidean", "maximum", "manhattan", "canberra", "binary" or "minkowski".
+
+h_cluster_average <- hclust(distance_matrix, method = 'average')
+h_cluster_average_d <- as.dendrogram(h_cluster_average)
+h_cluster_average_colour <- color_branches(h_cluster_average_d, k=2)
+
+h_cluster_complete <- hclust(distance_matrix, method = 'complete')
+h_cluster_complete_d <- as.dendrogram(h_cluster_complete)
+h_cluster_complete_colour <- color_branches(h_cluster_complete_d, k=2)
+
+h_cluster_single <- hclust(distance_matrix, method = 'single')
+h_cluster_single_d <- as.dendrogram(h_cluster_single)
+h_cluster_single_colour <- color_branches(h_cluster_single_d, k=2)
+
+h_cluster_centroid <- hclust(distance_matrix, method = 'mcquitty')
+h_cluster_centroid_d <- as.dendrogram(h_cluster_centroid)
+h_cluster_centroid_colour <- color_branches(h_cluster_centroid_d, k=2)
+```
+
+
+```{r}
+par(mfrow = c(2,2),mar = c(2, 2, 2, 2))
+plot(h_cluster_average_colour, main="Linkage criteria: Average", cex = 0.6)
+plot(h_cluster_complete_colour, main="Linkage criteria: Complete", cex = 0.6)
+plot(h_cluster_single_colour, main="Linkage criteria: Single", cex = 0.6)
+plot(h_cluster_centroid_colour , main = "Linkage criteria: Mcquitty", cex = 0.6)
+```
+# Correlation-based distance Cluster (genes and observations)
+Using 1-cor  
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2928186/  
+
+```{r}
+# Pairwise correlation between samples (columns)
+cols.cor <- cor(t(team_subset[,1:20]), use = "pairwise.complete.obs", method = "pearson")
+# Pairwise correlation between rows (genes)
+rows.cor <- cor(team_subset[,1:20], use = "pairwise.complete.obs", method = "pearson")
+
+# Plot the heatmap
+library(pheatmap)
+pheatmap(team_subset[,1:20], scale = "row", 
+  clustering_distance_cols = as.dist(1 - rows.cor),
+  clustering_distance_rows = as.dist(1 - cols.cor))
+```
+
+
+# K means clustering
+```{r}
+#K-means
+model <- kmeans(data_reduced, centers = 2)
+#Elbow method - choosing the correct K
+
+tot_withinss <- map_dbl(1:10, function(k){
+        model <- kmeans(x = data_reduced, centers = k)
+        model$tot.withinss
+})
+elbow_df <- data.frame(
+        k = 1:10,
+        tot_withinss = tot_withinss
+)
+```
+  
+  
+## Elbow plot
+```{r, warning=FALSE}
+ggplot(elbow_df, aes(x = k, y = tot_withinss)) +
+        geom_line() +
+        geom_point()+
+                geom_segment(aes(x = k[-1][which.max(tot_withinss[-1])],
+                         xend = k[-1][which.max(tot_withinss[-1])],
+                         y =  0,
+                         yend =  max(tot_withinss[-1])),
+                     color="grey",
+                     linetype="dashed")+
+        geom_point(aes(x = k[2], y = tot_withinss[2]),
+                   fill = 'red', shape = 21 ,colour = 'black', size = 5)+
+        labs(title = 'Elbow plot',
+                x = 'k',
+                y = 'Total Within Sum of Squares'
+             )+
+        scale_x_continuous(breaks = 1:10)+
+        theme_classic()
+```
+  
+  
+## Silhouette analysis
+```{r}
+library(cluster)
+# plotting the Average silhoutte width for k = 2
+pam_k2 <- pam(data_reduced, k = 2)
+sil2_plot <- silhouette(pam_k2)
+# plotting the Average silhoutte width for k = 3
+pam_k3 <- pam(data_reduced, k = 3)
+sil3_plot <- silhouette(pam_k3)
+
+par(mfrow = c(1,2))
+plot(sil2_plot)
+plot(sil3_plot)
+```
+
+
+```{r}
+library(purrr)
+#using purrr::map_bdl to iterate and calculate the sil_width over and over
+sil_width <- map_dbl(2:10, function(k){
+        model <- pam(x = data_reduced, k = k)
+        model$silinfo$avg.width
+})
+
+sil_df <- data.frame(
+        k = 2:10,
+        sil_width = sil_width
+)
+```
+
+
+```{r, warning=F}
+# plotting the Average silhoutte width
+ggplot(sil_df, aes(x = k, y = sil_width)) +
+  geom_line() +
+    geom_point()+
+  scale_x_continuous(breaks = 2:max(sil_df))+
+  labs(title = 'Optimal number of Clusters',
+       y ='Average silhoutte width',
+       x = 'k')+
+  geom_segment(aes(x = k[which.max(sil_width)],
+                   xend = k[which.max(sil_width)],
+                   y =  0,
+                   yend =  max(sil_width)),color="grey",linetype="dashed")+
+  geom_point(aes(x = k[which.max(sil_width)],
+                 y = max(sil_width)),
+             fill = 'red',
+             shape = 21 ,
+             colour = 'black',
+             size = 5)+
+  theme_classic()
+```
+
+
+# Question 3: 
+
+## Use lasso reduced data
+```{r}
+
+lasso_reduced <- data_reduced
+lasso_reduced$Class <- new_df$Class
+lasso_reduced
+
+```
+
+ 
+```{r eval=TRUE, echo=FALSE}
+#Adding class column to filtered data
+
+#filtered_var_df <- filtered_df 
+filtered_var_df <- lasso_reduced 
+#filtered_var_df$Class <- new_df$Class
+
+# shuffle the dataframe by rows 
+set.seed(2315880)
+filtered_var_df= filtered_var_df[sample(1:nrow(filtered_var_df)), ]
+
+# make train and test subsets
+sample = sample.split(filtered_var_df$Class, SplitRatio = 0.8)
+train = subset(filtered_var_df, sample == TRUE)
+test  = subset(filtered_var_df, sample == FALSE)
+
+print(dim(train))
+print(dim(test))
+```
+
+
+## Logistic Regression
+```{r, eval=TRUE}
+
+ks <- seq(3,10, by = 1)
+k_numbers <- list()
+errors <- list()
+
+for (each in ks){
+  data_list <- cv_fold(filtered_var_df, each)
+
+  # Logistic Regression with k-fold
+  avg_error <- list()
+
+  # run logistic regressions for all 6 folds
+  for (i in data_list){
+    cv_test <- as.data.frame(i) # make test data from selected fold
+    cv_train <- setdiff(filtered_var_df, cv_test) # make train data with rows other than test data
+
+    LR <- glm(Class ~., data = cv_train, family = binomial)
+
+    LR_prediction <- predict(LR, newdata = cv_test, type = 'response')
+  
+    # change probabilities to labels
+    LR_prediction <- case_when(
+      LR_prediction < 0.5 ~ 0,
+      TRUE ~ 1
+      )
+
+    error <- misclass(LR_prediction, cv_test$Class)
+    avg_error <- append(avg_error, error)
+  }
+  mean_err <- mean_list(avg_error)
+  errors <- append(errors, mean_err)
+  k_numbers <- append(k_numbers, each)
+}
+
+print(min(unlist(errors)))
+
+err_df = data.frame(unlist(k_numbers),unlist(errors))
+names(err_df) = c("k_folds","Error")
+
+
+ggplot(err_df, aes(x=k_folds, y=Error)) +
+  geom_line( color="#69b3a2", linewidth=1, alpha=0.9, linetype=1) +
+  scale_x_continuous(breaks= kn) +
+  ggtitle("Effect of number of folds on misclasification error")
+
+```
+Optimum value for k-fold for this data is 7.
+
+```{r, eval=TRUE}
+
+# Logistic Regression with bootstrapping
+
+library(boot)
+
+# function for logistic regression for bootstrapping
+LR_function <- function(formula, data, indices){
+  d <- data[indices, ]
+  LR <- glm(formula, data = d, family = binomial(link = logit))
+  LR_prediction <- predict(LR, newdata = test, type = 'response')
+  
+  LR_prediction <- case_when(
+    LR_prediction < 0.5 ~ 0,
+    TRUE ~ 1
+    )
+  return(misclass(LR_prediction, test$Class))
+}
+
+# repeat logistic regression for 20 bootstraps 
+LR_reps <- boot(data=train, statistic=LR_function, R=20, formula=Class ~.)
+
+mean_list(LR_reps$t)
+
+```
+
+
+## Poisson Regression
+```{r, eval=TRUE}
+
+# Poisson Regression with k-fold
+data_list <- cv_fold(filtered_var_df, 7)
+
+avg_error <- list()
+for (i in data_list){
+  cv_test <- as.data.frame(i)
+  cv_train = setdiff(filtered_var_df, cv_test)
+
+  PR <- glm(Class ~., data = cv_train, family = poisson(link = log))
+
+  PR_prediction <- predict(PR, newdata = cv_test, type = 'response')
+  
+  PR_prediction <- case_when(
+    PR_prediction < 0.5 ~ 0,
+    TRUE ~ 1)
+  
+  error <- misclass(PR_prediction, cv_test$Class)
+  avg_error <- append(avg_error, error)
+}
+
+mean_list(avg_error)
+
+```
+
+
+```{r, eval=TRUE}
+
+# Poisson Regression with bootstrapping
+
+# function for poisson regression for bootstrapping
+PR_function <- function(formula, data, indices){
+  d <- data[indices, ]
+  PR <- glm(formula, data = d, family = poisson(link = log))
+  
+  PR_prediction <- predict(PR, newdata = test, type = 'response')
+  
+  PR_prediction <- case_when(
+    PR_prediction < 0.5 ~ 0,
+    TRUE ~ 1)
+
+  return(misclass(PR_prediction, test$Class))
+}
+
+# repeating poisson regression for 20 bootstraps
+PR_reps <- boot(data=train, statistic=PR_function, R=20, formula=Class ~.)
+
+mean_list(PR_reps$t)
+
+```
+
+
+## LDA
+```{r, eval=TRUE}
+# LDA with k-fold
+
+avg_error <- list()
+for (i in data_list){
+  cv_test <- as.data.frame(i)
+  cv_train = setdiff(filtered_var_df, cv_test)
+  
+  LDA <- lda(Class ~.  , data=cv_train) # perform LDA on subset
+  lda_prediction <- predict(LDA, newdata = cv_test) 
+
+  error <- misclass(lda_prediction$class, cv_test$Class)
+  avg_error <- append(avg_error, error)
+}
+
+mean_list(avg_error)
+
+```
+
+
+```{r, eval=TRUE}
+
+# LDA with bootstrapping
+
+LDA_function <- function(formula, data, indices){
+  d <- data[indices, ]
+  LDA <- lda(formula , data=d)
+  
+  lda_prediction <- predict(LDA, newdata = test)
+  
+  return(misclass(lda_prediction$class, test$Class))
+}
+
+LDA_reps <- boot(data=train, statistic=LDA_function, R=20, formula=Class ~.)
+
+mean_list(LDA_reps$t)
+
+```
+
+
+
+```{r, eval=TRUE}
+# QDA with k-fold
+
+ # avg_error <- list()
+ # for (i in data_list){
+ #   cv_test <- as.data.frame(i)
+ #   cv_train = setdiff(filtered_var_df, cv_test)
+ # 
+ #   QDA <- qda(Class ~.  , data=cv_train) # perform LDA on subset
+ #   qda_prediction <- predict(QDA, newdata = cv_test)
+ # 
+ #   error <- misclass(qda_prediction$class, cv_test$Class)
+ #   avg_error <- append(avg_error, error)
+ # }
+ # 
+ # mean_list(avg_error)
+
+```
+
+
+
+```{r, eval=TRUE}
+
+# QDA with bootstrapping
+
+# QDA_function <- function(formula, data, indices){
+#   d <- data[indices, ]
+#   QDA <- qda(formula , data=d)
+#   
+#   qda_prediction <- predict(QDA, newdata = test)
+#   
+#   return(misclass(qda_prediction$class, test$Class))
+# }
+# 
+# QDA_reps <- boot(data=train, statistic=QDA_function, R=100, formula=Class ~.)
+# 
+# mean_list(QDA_reps$t)
+
+```
+
+
+
+## kNN
+```{r, eval=TRUE}
+
+# KNN with k-fold
+
+k = seq(1, 20, by=1)
+
+k_value <- list()
+cv_error <- list()
+
+for (val in k)
+{
+  avg_error <- list()
+  for (i in data_list){
+    cv_test <- as.data.frame(i)
+    cv_train = setdiff(filtered_var_df, cv_test)
+  
+    classifier_knn <- knn(train = cv_train,
+                          test = cv_test,
+                          cl = cv_train$Class,
+                          k = val)
+
+    error <- misclass(classifier_knn, cv_test$Class)
+    avg_error <- append(avg_error, error)
+  }
+  
+  k_value <- append(k_value, val)
+  e <- mean_list(avg_error)
+  cv_error <- append(cv_error, e)
+}
+
+print(min(unlist(cv_error)))
+
+knn_score_df = data.frame(unlist(k_value),unlist(cv_error))
+names(knn_score_df) = c("k","cv_error")
+
+ggplot(knn_score_df, aes(x=k, y=cv_error)) +
+  geom_line( color="#69b3a2", linewidth=1, alpha=0.9, linetype=1) +
+  scale_x_continuous(breaks= k) +
+  ggtitle("Effect of no. of neighbours on error")
+
+```
+
+```{r, eval=TRUE}
+
+# KNN with bootstrapping
+
+knn_function <- function(data, indices){
+  d <- data[indices, ]
+  
+  classifier_knn <- knn(train = d,
+                          test = test,
+                          cl = d$Class,
+                          k = val)
+  
+  return(misclass(classifier_knn, test$Class))
+}
+
+
+k = seq(1,20, by=1)
+
+k_value <- list()
+cv_error <- list()
+
+for (val in k)
+{
+  KNN_reps <- boot(data=train, statistic=knn_function, R=20)
+  ee <- mean_list(KNN_reps$t)
+  k_value <- append(k_value, val)
+  cv_error <- append(cv_error, ee)
+  }
+  
+print(min(unlist(cv_error)))
+
+knn_score_df = data.frame(unlist(k_value),unlist(cv_error))
+names(knn_score_df) = c("k","cv_error")
+
+ggplot(knn_score_df, aes(x=k, y=cv_error)) +
+  geom_line( color="#69b3a2", linewidth=1, alpha=0.9, linetype=1) +
+  scale_x_continuous(breaks= k) +
+  ggtitle("Effect of no. of neighbours on error")
+
+```
+
+
+## Random Forest
+
+```{r, eval=TRUE}
+# Random forest with k-fold
+
+trees = seq(1,20, by = 1)
+
+n_trees <- list()
+rf_error <- list()
+
+for (tree in trees)
+{
+  avg_error <- list()
+  for (i in data_list){
+    cv_test <- as.data.frame(i)
+    cv_train = setdiff(filtered_var_df, cv_test)
+  
+    rf <- randomForest(Class~., data=cv_train, proximity=TRUE, ntree = tree, set.seed(2315880))
+    rf_prediction <- predict(rf, newdata = cv_test)
+    # rf_prediction <- case_when(
+    #   rf_prediction < 0.5 ~ 0,
+    #   TRUE ~ 1)
+
+    error <- misclass(rf_prediction, cv_test$Class)
+    avg_error <- append(avg_error, error)
+  }
+  
+  n_trees <- append(n_trees, tree)
+  e <- mean_list(avg_error)
+  rf_error <- append(rf_error, e)
+
+}
+
+print(min(unlist(rf_error)))
+
+rf_score_df = data.frame(unlist(n_trees),unlist(rf_error))
+names(rf_score_df) = c("n_trees","Error")
+
+ggplot(rf_score_df, aes(x=n_trees, y=Error)) +
+  geom_line(color="#69b3a2", linewidth=1, alpha=0.9, linetype=1) +
+  scale_x_continuous(breaks= trees) +
+  ggtitle("No. of trees vs error")
+
+```
+
+
+```{r, eval=TRUE}
+# Random forest with bootstraping
+
+RF_function <- function(formula, data, indices){
+  d <- data[indices, ]
+  rf <- randomForest(formula, data=d, proximity=TRUE, ntree = tree, set.seed(2315880))
+  
+  rf_prediction <- predict(rf, newdata = test)
+  # rf_prediction <- case_when(
+  #   rf_prediction < 0.5 ~ 0,
+  #   TRUE ~ 1)
+  return(misclass(rf_prediction, test$Class))
+}
+
+trees = seq(1,20, by = 1)
+
+n_trees <- list()
+rf_error <- list()
+
+for (tree in trees){
+  RF_reps <- boot(data=train, statistic=RF_function, R=20, formula=Class ~.)
+  
+  e = mean_list(RF_reps$t)
+  n_trees <- append(n_trees, tree)
+  rf_error <- append(rf_error, e)
+
+}
+
+print(min(unlist(rf_error)))
+
+rf_score_df = data.frame(unlist(n_trees),unlist(rf_error))
+names(rf_score_df) = c("n_trees","Error")
+
+
+ggplot(rf_score_df, aes(x=n_trees, y=Error)) +
+  geom_line(color="#69b3a2", linewidth=1, alpha=0.9, linetype=1) +
+  scale_x_continuous(breaks= trees) +
+  ggtitle("No. of trees vs error")
+
+```
+
+
+## SVM
+```{r, eval=TRUE}
+
+# Radial SVM with k-fold
+data_list <- cv_fold(filtered_var_df, 7)
+
+avg_error <- list()
+for (i in data_list){
+  cv_test <- as.data.frame(i)
+  cv_train <- setdiff(filtered_var_df, cv_test)
+
+  svm_classifier = svm(formula = Class ~ ., 
+                       data = cv_train, 
+                       type = 'C-classification', 
+                       kernel = 'radial',
+                       cost = 5) 
+
+  svm_prediction <- predict(svm_classifier, cv_test)
+  print(svm_prediction)
+  
+  error <- misclass(svm_prediction, cv_test$Class)
+  avg_error <- append(avg_error, error)
+}
+
+mean_list(avg_error)
+
+```
+
+```{r, eval=TRUE}
+
+# SVM with bootstrapping
+
+SVM_function <- function(formula, data, indices){
+  d <- data[indices, ]
+
+  svm_classifier = svm(formula = formula, 
+                       data = d, 
+                       type = 'C-classification', 
+                       kernel = 'radial',
+                       cost = 5) 
+  
+  svm_prediction <- predict(svm_classifier, test)
+  
+  return(misclass(svm_prediction, test$Class))
+}
+
+SVM_reps <- boot(data=train, statistic=SVM_function, R=20, formula=Class ~.)
+
+mean_list(SVM_reps$t)
+
+```
+
+
+
+## GLM Boost
+```{r, eval=TRUE}
+
+# GLM Boost with k-fold
+
+avg_error <- list()
+for (i in data_list){
+  cv_test <- as.data.frame(i)
+  cv_train <- setdiff(filtered_var_df, cv_test)
+
+  GLMB_classifier = glmboost(Class ~ ., data = cv_train)
+
+  GLMB_prediction <- predict(GLMB_classifier, newdata = cv_test)
+  
+  GLMB_prediction <- case_when(
+      GLMB_prediction < 0.5 ~ 0,
+      TRUE ~ 1)
+  
+  error <- misclass(GLMB_prediction, cv_test$Class)
+  avg_error <- append(avg_error, error)
+}
+
+mean_list(avg_error)
+
+```
+
+
+```{r, eval=TRUE}
+
+# GLM Boost with bootstrapping
+
+GLMB_function <- function(formula, data, indices){
+  d <- data[indices, ]
+
+  GLMB_classifier = glmboost(formula, data = d) 
+  
+  GLMB_prediction <- predict(GLMB_classifier, newdata = test)
+  
+  return(misclass(GLMB_prediction, test$Class))
+}
+
+GLMB_reps <- boot(data=train, statistic=GLMB_function, R=20, formula=Class ~.)
+
+mean_list(GLMB_reps$t)
+
+```
+
+
+## XGBoost
+
+```{r, eval=TRUE}
+
+# XGBoost with k-fold
+
+avg_error <- list()
+for (i in data_list){
+  cv_test <- as.data.frame(i)
+  cv_train <- setdiff(filtered_var_df, cv_test)
+  
+  r <- length(cv_train)
+
+  XGB_classifier = xgboost(label = cv_train$Class, data = data.matrix(cv_train[,1:r-1]),
+                         max_depth = 3, nround=1, set.seed(2315880)) 
+
+  XGB_prediction <- predict(XGB_classifier, newdata = data.matrix(cv_test[,1:r-1]))
+  
+  XGB_prediction <- case_when(
+    XGB_prediction < 0.5 ~ 0,
+    TRUE ~ 1)
+  
+  error <- misclass(XGB_prediction, cv_test$Class)
+  avg_error <- append(avg_error, error)
+}
+
+mean_list(avg_error)
+
+```
+
+```{r, eval=TRUE}
+
+# XGBoost with bootstrapping
+
+XGB_function <- function(formula, data, indices){
+
+  d <- data[indices, ]
+
+  r <- length(d)
+  XGB_classifier = xgboost(label = formula, data = data.matrix(d[,1:r-1]),
+                         max_depth = 2, nround=3, set.seed(2315880)) 
+  
+  XGB_prediction <- predict(XGB_classifier, newdata = data.matrix(test[,1:r-1]))
+  
+  XGB_prediction <- case_when(
+    XGB_prediction < 0.5 ~ 0,
+    TRUE ~ 1)
+  
+  return(misclass(XGB_prediction, test$Class))
+}
+
+XGB_reps <- boot(data=train, statistic=XGB_function, R=20, formula=train$Class)
+
+mean_list(XGB_reps$t)
+
+```
+# Question 4:
+
+## Taking 20 principal components from second question
+
+```{r eval=TRUE}
+
+#Adding class column to filtered data
+
+pca_data <- as.data.frame(pca.fit$score[,1:20]) # for imbalanced data
+#pca_data <- as.data.frame(pca.fit$score[,1:25]) # For oversampled data
+pca_data$Class <- new_df$Class
+
+# shuffle the dataframe by rows 
+set.seed(2315880)
+pca_data= pca_data[sample(1:nrow(pca_data)), ]
+
+sample = sample.split(pca_data$Class, SplitRatio = 0.8)
+train = subset(pca_data, sample == TRUE)
+test  = subset(pca_data, sample == FALSE)
+
+print(dim(train))
+print(dim(test))
+```
+
+
+
+```{r, eval=TRUE}
+
+# KNN with k-fold
+
+data_list <- cv_fold(pca_data, 7)
+
+k = seq(1, 20, by=1)
+
+k_value <- list()
+cv_error <- list()
+
+for (val in k)
+{
+  avg_error <- list()
+  for (i in data_list){
+    cv_test <- as.data.frame(i)
+    cv_train = setdiff(pca_data, cv_test)
+  
+    classifier_knn <- knn(train = cv_train,
+                          test = cv_test,
+                          cl = cv_train$Class,
+                          k = val,
+                          set.seed(2315880))
+
+    error <- misclass(classifier_knn, cv_test$Class)
+    avg_error <- append(avg_error, error)
+  }
+  
+  k_value <- append(k_value, val)
+  e <- mean_list(avg_error)
+  cv_error <- append(cv_error, e)
+}
+
+print(min(unlist(cv_error)))
+
+knn_score_df = data.frame(unlist(k_value),unlist(cv_error))
+names(knn_score_df) = c("k","cv_error")
+
+ggplot(knn_score_df, aes(x=k, y=cv_error)) +
+  geom_line( color="#69b3a2", linewidth=1, alpha=0.9, linetype=1) +
+  scale_x_continuous(breaks= k) +
+  ggtitle("Effect of no. of neighbours on error")
+
+```
+
+```{r, eval=TRUE}
+
+# KNN with bootstrapping
+
+knn_function <- function(data, indices){
+  d <- data[indices, ]
+  
+  classifier_knn <- knn(train = d,
+                          test = test,
+                          cl = d$Class,
+                          k = val,
+                        set.seed(2315880))
+  
+  return(misclass(classifier_knn, test$Class))
+}
+
+
+k = seq(1,20, by=1)
+
+k_value <- list()
+cv_error <- list()
+
+for (val in k)
+{
+  KNN_reps <- boot(data=train, statistic=knn_function, R=20)
+  ee <- mean_list(KNN_reps$t)
+  k_value <- append(k_value, val)
+  cv_error <- append(cv_error, ee)
+  }
+  
+print(min(unlist(cv_error)))
+
+knn_score_df = data.frame(unlist(k_value),unlist(cv_error))
+names(knn_score_df) = c("k","cv_error")
+
+ggplot(knn_score_df, aes(x=k, y=cv_error)) +
+  geom_line( color="#69b3a2", linewidth=1, alpha=0.9, linetype=1) +
+  scale_x_continuous(breaks= k) +
+  ggtitle("Effect of no. of neighbours on error")
+
+```
+
+
+
+### Using hierarchical clusters
+```{r eval=TRUE}
+# Adding Clusters
+
+h_clusters <- cutree(h_cluster_centroid, k = 2)
+cluster_data <- filtered_df # for t-test reduced data
+#cluster_data <- lasso_reduced # For lasso reduced data
+cluster_data$clusters <- h_clusters
+
+
+# shuffle the dataframe by rows 
+set.seed(2315880)
+cluster_data= cluster_data[sample(1:nrow(cluster_data)), ]
+
+sample = sample.split(cluster_data$Class, SplitRatio = 0.8)
+train = subset(cluster_data, sample == TRUE)
+test  = subset(cluster_data, sample == FALSE)
+
+print(dim(train))
+print(dim(test))
+```
+
+
+
+```{r, eval=TRUE}
+
+# KNN with k-fold
+
+data_list <- cv_fold(cluster_data, 7)
+
+k = seq(1, 20, by=1)
+
+k_value <- list()
+cv_error <- list()
+
+for (val in k)
+{
+  avg_error <- list()
+  for (i in data_list){
+    cv_test <- as.data.frame(i)
+    cv_train = setdiff(cluster_data, cv_test)
+  
+    classifier_knn <- knn(train = cv_train,
+                          test = cv_test,
+                          cl = cv_train$Class,
+                          k = val,
+                          set.seed(2315880))
+
+    error <- misclass(classifier_knn, cv_test$Class)
+    avg_error <- append(avg_error, error)
+  }
+  
+  k_value <- append(k_value, val)
+  e <- mean_list(avg_error)
+  cv_error <- append(cv_error, e)
+}
+
+print(min(unlist(cv_error)))
+
+knn_score_df = data.frame(unlist(k_value),unlist(cv_error))
+names(knn_score_df) = c("k","cv_error")
+
+ggplot(knn_score_df, aes(x=k, y=cv_error)) +
+  geom_line( color="#69b3a2", linewidth=1, alpha=0.9, linetype=1) +
+  scale_x_continuous(breaks= k) +
+  ggtitle("Effect of no. of neighbours on error")
+
+```
+
+```{r, eval=TRUE}
+
+# KNN with bootstrapping
+
+knn_function <- function(data, indices){
+  d <- data[indices, ]
+  
+  classifier_knn <- knn(train = d,
+                          test = test,
+                          cl = d$Class,
+                          k = val,
+                        set.seed(2315880))
+  
+  return(misclass(classifier_knn, test$Class))
+}
+
+
+k = seq(1,20, by=1)
+
+k_value <- list()
+cv_error <- list()
+
+for (val in k)
+{
+  KNN_reps <- boot(data=train, statistic=knn_function, R=20)
+  ee <- mean_list(KNN_reps$t)
+  k_value <- append(k_value, val)
+  cv_error <- append(cv_error, ee)
+  }
+  
+print(min(unlist(cv_error)))
+
+knn_score_df = data.frame(unlist(k_value),unlist(cv_error))
+names(knn_score_df) = c("k","cv_error")
+
+ggplot(knn_score_df, aes(x=k, y=cv_error)) +
+  geom_line( color="#69b3a2", linewidth=1, alpha=0.9, linetype=1) +
+  scale_x_continuous(breaks= k) +
+  ggtitle("Effect of no. of neighbours on error")
+
+```
+
+
+### Using k-means clusters
+```{r eval=TRUE}
+# Adding Clusters
+
+k_clusters <- model$cluster
+cluster_data <- filtered_df # for t-test reduced data
+#cluster_data <- lasso_reduced # for lasso reduced data
+
+cluster_data$clusters <- k_clusters
+
+
+# shuffle the dataframe by rows 
+set.seed(2315880)
+cluster_data= cluster_data[sample(1:nrow(cluster_data)), ]
+
+sample = sample.split(cluster_data$Class, SplitRatio = 0.8)
+train = subset(cluster_data, sample == TRUE)
+test  = subset(cluster_data, sample == FALSE)
+
+print(dim(train))
+print(dim(test))
+```
+
+
+```{r, eval=TRUE}
+
+data_list <- cv_fold(cluster_data, 7)
+
+# KNN with k-fold
+
+k = seq(1, 20, by=1)
+
+k_value <- list()
+cv_error <- list()
+
+for (val in k)
+{
+  avg_error <- list()
+  for (i in data_list){
+    cv_test <- as.data.frame(i)
+    cv_train = setdiff(cluster_data, cv_test)
+  
+    classifier_knn <- knn(train = cv_train,
+                          test = cv_test,
+                          cl = cv_train$Class,
+                          k = val,
+                          set.seed(2315880))
+
+    error <- misclass(classifier_knn, cv_test$Class)
+    avg_error <- append(avg_error, error)
+  }
+  
+  k_value <- append(k_value, val)
+  e <- mean_list(avg_error)
+  cv_error <- append(cv_error, e)
+}
+
+print(min(unlist(cv_error)))
+
+knn_score_df = data.frame(unlist(k_value),unlist(cv_error))
+names(knn_score_df) = c("k","cv_error")
+
+ggplot(knn_score_df, aes(x=k, y=cv_error)) +
+  geom_line( color="#69b3a2", linewidth=1, alpha=0.9, linetype=1) +
+  scale_x_continuous(breaks= k) +
+  ggtitle("Effect of no. of neighbours on error")
+
+```
+
+```{r, eval=TRUE}
+
+# KNN with bootstrapping
+
+knn_function <- function(data, indices){
+  d <- data[indices, ]
+  
+  classifier_knn <- knn(train = d,
+                          test = test,
+                          cl = d$Class,
+                          k = val,
+                        set.seed(2315880))
+  
+  return(misclass(classifier_knn, test$Class))
+}
+
+
+k = seq(1,20, by=1)
+
+k_value <- list()
+cv_error <- list()
+
+for (val in k)
+{
+  KNN_reps <- boot(data=train, statistic=knn_function, R=20)
+  ee <- mean_list(KNN_reps$t)
+  k_value <- append(k_value, val)
+  cv_error <- append(cv_error, ee)
+  }
+  
+print(min(unlist(cv_error)))
+
+knn_score_df = data.frame(unlist(k_value),unlist(cv_error))
+names(knn_score_df) = c("k","cv_error")
+
+ggplot(knn_score_df, aes(x=k, y=cv_error)) +
+  geom_line( color="#69b3a2", linewidth=1, alpha=0.9, linetype=1) +
+  scale_x_continuous(breaks= k) +
+  ggtitle("Effect of no. of neighbours on error")
+
+```
+
+
