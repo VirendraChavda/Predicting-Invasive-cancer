@@ -1,15 +1,3 @@
----
-title: 'MA321-7: Applied Statistics'
-author: "Group Project"
-Registration number: ""
-output:
-  html_document:
-    df_print: paged
-  pdf_document: default
-  word_document: default
----
-
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
