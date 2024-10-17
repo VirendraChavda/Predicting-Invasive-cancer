@@ -1,10 +1,9 @@
 # Gene Expression Analysis for Cancer Classification
+### Author: Virendrasinh Chavd
 
-* This repository contains the code and analysis for classifying invasive and non-invasive cancer types using gene expression data. The project focuses on applying dimensionality reduction techniques and machine learning models to accurately predict cancer type, while investigating the effects of different reduction methods and validating model performance through resampling techniques. *
+** This repository contains the code and analysis for classifying invasive and non-invasive cancer types using gene expression data. The project focuses on applying dimensionality reduction techniques and machine learning models to accurately predict cancer type, while investigating the effects of different reduction methods and validating model performance through resampling techniques. **
 
-### Author: Virendrasinh Chavda
-
-##Table of Contents
+## Table of Contents
 * Overview
 * Data
 * Methodology
