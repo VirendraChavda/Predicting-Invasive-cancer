@@ -1,7 +1,7 @@
 # Gene Expression Analysis for Cancer Classification
 ### Author: Virendrasinh Chavda
 
-_This repository contains the code and analysis for classifying invasive and non-invasive cancer types using gene expression data. The project focuses on applying dimensionality reduction techniques and machine learning models to accurately predict cancer type, while investigating the effects of different reduction methods and validating model performance through resampling techniques. _
+This repository contains the code and analysis for classifying invasive and non-invasive cancer types using gene expression data. The project focuses on applying dimensionality reduction techniques and machine learning models to accurately predict cancer type, while investigating the effects of different reduction methods and validating model performance through resampling techniques. 
 
 ## Table of Contents
 * Overview
@@ -17,25 +17,25 @@ Early detection of invasive cancers is crucial in improving patient outcomes and
 
 This project aims to tackle the challenge of high-dimensionality through dimensionality reduction techniques and to assess the performance of various machine learning models in classifying cancer types. The key focus is to:
 
-Reduce the feature space to improve model performance and interpretability.
-Evaluate the impact of dimensionality reduction on different supervised learning algorithms.
-Use resampling techniques such as K-fold cross-validation and bootstrapping to ensure the robustness of the results and avoid overfitting.
+1. Reduce the feature space to improve model performance and interpretability.
+2. Evaluate the impact of dimensionality reduction on different supervised learning algorithms.
+3. Use resampling techniques such as K-fold cross-validation and bootstrapping to ensure the robustness of the results and avoid overfitting.
+
 By leveraging these approaches, this project demonstrates how machine learning models can achieve high accuracy in cancer classification tasks while maintaining computational efficiency and stability.
 
-Data
+## Data:
 The dataset consists of gene expression levels from 78 patients, with 4949 gene features representing expression levels. The dataset is labeled with two classes:
-
-Class 1: Invasive cancer
-Class 2: Non-invasive cancer
+* Class 1: Invasive cancer
+* Class 2: Non-invasive cancer
 To make the analysis more computationally feasible, a random subset of 2000 genes was selected. Missing data issues were handled using k-Nearest Neighbors (kNN) imputation. The resulting dataset was then used for dimensionality reduction and machine learning classification.
 
-Methodology
-1. Preprocessing
+## Methodology:
+### 1. Preprocessing
 The gene expression dataset was preprocessed to handle missing values and clean erroneous rows:
 
-kNN Imputation: Missing values were imputed using the kNN algorithm, which estimates missing values based on the closest data points in the feature space.
-Outlier Removal: Rows with an excessive number of missing values were removed to improve the quality of the data.
-Standardization: Gene expression levels were standardized to ensure that the models could process the data effectively.
+* **kNN Imputation**: Missing values were imputed using the kNN algorithm, which estimates missing values based on the closest data points in the feature space.
+* **Outlier Removal**: Rows with an excessive number of missing values were removed to improve the quality of the data.
+* **Standardization**: Gene expression levels were standardized to ensure that the models could process the data effectively.
 2. Dimensionality Reduction
 To tackle the high dimensionality of the gene expression data, several techniques were applied:
 
