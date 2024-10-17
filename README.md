@@ -4,13 +4,13 @@
 This repository contains the code and analysis for classifying invasive and non-invasive cancer types using gene expression data. The project focuses on applying dimensionality reduction techniques and machine learning models to accurately predict cancer type, while investigating the effects of different reduction methods and validating model performance through resampling techniques. 
 
 ## Table of Contents
-* Overview
-* Data
-* Methodology
-* Models and Techniques
-* Results
-* Installation
-* Usage
+1. [Overview](#Overview)
+2. [Data](#Data)
+3. [Methodology](#Methodology)
+4. [Models and Techniques](#Models-and-Techniques)
+5. [Results](#Results)
+6. [Contributing](#Contributing)
+7. [License](#License)
 
 ## Overview
 Early detection of invasive cancers is crucial in improving patient outcomes and developing effective treatment strategies. Gene expression data provides a valuable avenue for identifying patterns that differentiate between invasive and non-invasive cancers. However, gene expression datasets are often high-dimensional, making it challenging to train accurate and efficient models.
@@ -96,3 +96,15 @@ In addition to supervised classification, unsupervised learning techniques were 
 
 ## Summary:
 This project demonstrates the effectiveness of combining dimensionality reduction techniques with machine learning models for gene expression analysis and cancer classification. It highlights the importance of feature selection in high-dimensional datasets and provides insights into model stability through robust validation techniques.
+
+## Contributing
+
+Contributions are welcome! If you find any issues or want to improve the code, feel free to open a pull request or create an issue in the repository.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details.
+
+---
+
+For more details, please refer to the [project report](./report.pdf).
