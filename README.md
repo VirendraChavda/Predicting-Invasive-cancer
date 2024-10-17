@@ -107,4 +107,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ---
 
-For more details, please refer to the [project report](./report.pdf).
+For more details, please refer to the [project report](./Report.pdf).
