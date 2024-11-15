@@ -101,8 +101,8 @@ In addition to supervised classification, unsupervised learning techniques were 
 2. Hierarchical Clustering
 
 ## Results:
-<p align="justify">
 ### Key Findings:
+<p align="justify">
 * KNN performed exceptionally well, achieving a 0 misclassification error when combined with the two-sample t-test and LASSO-reduced datasets during cross-validation. This high accuracy is attributed to the dimensionality reduction techniques that filtered out irrelevant genes.
 * SVM also demonstrated strong performance, with a low misclassification rate, especially on datasets reduced by LASSO. The ability of SVM to handle high-dimensional data made it a reliable model for this task.
 
