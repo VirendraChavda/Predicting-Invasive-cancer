@@ -30,8 +30,8 @@ By leveraging these approaches, this project demonstrates how machine learning m
 ## Data:
 <p align="justify">
 The dataset consists of gene expression levels from 78 patients, with 4949 gene features representing expression levels. The dataset is labeled with two classes:
-* Class 1: Invasive cancer
-* Class 2: Non-invasive cancer
+- Class 1: Invasive cancer
+- Class 2: Non-invasive cancer
 To make the analysis more computationally feasible, a random subset of 2000 genes was selected. Missing data issues were handled using k-Nearest Neighbors (kNN) imputation. The resulting dataset was then used for dimensionality reduction and machine learning classification.
 </p>
 
